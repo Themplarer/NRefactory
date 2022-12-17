@@ -3,7 +3,6 @@
   <Import Project="..\..\..\..\DnSpyCommon.props" />
 
   <PropertyGroup>
-    <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>..\ICSharpCode.NRefactory.snk</AssemblyOriginatorKeyFile>
     <NoWarn>1591,1587,1570,1685</NoWarn>
     <GenerateAssemblyCompanyAttribute>false</GenerateAssemblyCompanyAttribute>
