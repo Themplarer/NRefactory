@@ -17,127 +17,144 @@
 // DEALINGS IN THE SOFTWARE.
 
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 
-namespace ICSharpCode.NRefactory.CSharp {
-	class InsertMissingTokensDecorator : DecoratingTokenWriter
-	{
-		readonly Stack<List<AstNode>> nodes = new Stack<List<AstNode>>();
-		List<AstNode> currentList;
-		readonly ILocatable locationProvider;
+namespace ICSharpCode.NRefactory.CSharp;
 
-		public InsertMissingTokensDecorator(TokenWriter writer, ILocatable locationProvider)
-			: base(writer)
-		{
-			this.locationProvider = locationProvider;
-			currentList = new List<AstNode>();
-		}
+class InsertMissingTokensDecorator : DecoratingTokenWriter
+{
+    private readonly Stack<List<AstNode>> _nodes = new();
+    private List<AstNode> _currentList;
+    private readonly ILocatable _locationProvider;
 
-		public override void StartNode(AstNode node)
-		{
-			if (node.NodeType != NodeType.Whitespace) {
-				currentList.Add(node);
-				nodes.Push(currentList);
-				currentList = new List<AstNode>();
-			} else if (node is Comment comment) {
-				comment.SetStartLocation(locationProvider.Location);
-			} else if (node is ErrorExpression error) {
-				error.Location = locationProvider.Location;
-			}
-			base.StartNode(node);
-		}
+    public InsertMissingTokensDecorator(TokenWriter writer, ILocatable locationProvider)
+        : base(writer)
+    {
+        _locationProvider = locationProvider;
+        _currentList = new List<AstNode>();
+    }
 
-		public override void EndNode(AstNode node)
-		{
-			// ignore whitespace: these don't need to be processed.
-			// StartNode/EndNode is only called for them to support folding of comments.
-			if (node.NodeType != NodeType.Whitespace) {
-				System.Diagnostics.Debug.Assert(currentList != null);
-				foreach (var removable in node.Children.Where(n => n is CSharpTokenNode)) {
-					removable.Remove();
-				}
-				foreach (var child in currentList) {
-					System.Diagnostics.Debug.Assert(child.Parent == null || node == child.Parent);
-					child.Remove();
-					node.AddChildWithExistingRole(child);
-				}
-				currentList = nodes.Pop();
-			} else if (node is Comment comment) {
-				comment.SetEndLocation(locationProvider.Location);
-			}
-			base.EndNode(node);
-		}
+    public override void StartNode(AstNode node)
+    {
+        if (node.NodeType != NodeType.Whitespace)
+        {
+            _currentList.Add(node);
+            _nodes.Push(_currentList);
+            _currentList = new List<AstNode>();
+        }
+        else if (node is Comment comment)
+            comment.SetStartLocation(_locationProvider.Location);
+        else if (node is ErrorExpression error)
+            error.Location = _locationProvider.Location;
 
-		public override void WriteToken(Role role, string token, object data)
-		{
-			switch (nodes.Peek().LastOrDefault())
-			{
-			case EmptyStatement emptyStatement:
-				emptyStatement.Location = locationProvider.Location;
-				break;
-			case ErrorExpression errorExpression:
-				errorExpression.Location = locationProvider.Location;
-				break;
-			default:
-				CSharpTokenNode t = new CSharpTokenNode(locationProvider.Location, (TokenRole)role);
-				t.Role = role;
-				currentList.Add(t);
-				break;
-			}
-			base.WriteToken(role, token, data);
-		}
+        base.StartNode(node);
+    }
 
-		public override void WriteKeyword(Role role, string keyword)
-		{
-			TextLocation start = locationProvider.Location;
-			CSharpTokenNode t = null;
-			if (role is TokenRole)
-				t = new CSharpTokenNode(start, (TokenRole)role);
-			else if (role == EntityDeclaration.ModifierRole)
-				t = new CSharpModifierToken(start, CSharpModifierToken.GetModifierValue(keyword));
-			else if (keyword == "this") {
-				ThisReferenceExpression node = nodes.Peek().LastOrDefault() as ThisReferenceExpression;
-				if (node != null)
-					node.Location = start;
-			} else if (keyword == "base") {
-				BaseReferenceExpression node = nodes.Peek().LastOrDefault() as BaseReferenceExpression;
-				if (node != null)
-					node.Location = start;
-			}
-			if (t != null) {
-				currentList.Add(t);
-				t.Role = role;
-			}
-			base.WriteKeyword(role, keyword);
-		}
+    public override void EndNode(AstNode node)
+    {
+        // ignore whitespace: these don't need to be processed.
+        // StartNode/EndNode is only called for them to support folding of comments.
+        if (node.NodeType != NodeType.Whitespace)
+        {
+            Debug.Assert(_currentList != null);
 
-		public override void WriteIdentifier(Identifier identifier, object data)
-		{
-			if (!identifier.IsNull)
-				identifier.SetStartLocation(locationProvider.Location);
-			currentList.Add(identifier);
-			base.WriteIdentifier(identifier, data);
-		}
+            foreach (var removable in node.Children.Where(n => n is CSharpTokenNode))
+                removable.Remove();
 
-		public override void WritePrimitiveValue(object value, object data = null, string literalValue = null)
-		{
-			Expression node = nodes.Peek().LastOrDefault() as Expression;
-			var startLocation = locationProvider.Location;
-			base.WritePrimitiveValue(value, data, literalValue);
-			if (node is PrimitiveExpression) {
-				((PrimitiveExpression)node).SetLocation(startLocation, locationProvider.Location);
-			}
-			if (node is NullReferenceExpression) {
-				((NullReferenceExpression)node).SetStartLocation(startLocation);
-			}
-		}
+            foreach (var child in _currentList)
+            {
+                Debug.Assert(child.Parent == null || node == child.Parent);
+                child.Remove();
+                node.AddChildWithExistingRole(child);
+            }
 
-		public override void WritePrimitiveType(string type)
-		{
-			PrimitiveType node = nodes.Peek().LastOrDefault() as PrimitiveType;
-			if (node != null)
-				node.SetStartLocation(locationProvider.Location);
-			base.WritePrimitiveType(type);
-		}
-	}
+            _currentList = _nodes.Pop();
+        }
+        else if (node is Comment comment)
+            comment.SetEndLocation(_locationProvider.Location);
+
+        base.EndNode(node);
+    }
+
+    public override void WriteToken(Role role, string token, object data)
+    {
+        switch (_nodes.Peek().LastOrDefault())
+        {
+            case EmptyStatement emptyStatement:
+                emptyStatement.Location = _locationProvider.Location;
+                break;
+            case ErrorExpression errorExpression:
+                errorExpression.Location = _locationProvider.Location;
+                break;
+            default:
+                var t = new CSharpTokenNode(_locationProvider.Location, (TokenRole)role)
+                {
+                    Role = role
+                };
+                _currentList.Add(t);
+                break;
+        }
+
+        base.WriteToken(role, token, data);
+    }
+
+    public override void WriteKeyword(Role role, string keyword)
+    {
+        var start = _locationProvider.Location;
+        CSharpTokenNode t = null;
+
+        if (role is TokenRole tokenRole)
+            t = new CSharpTokenNode(start, tokenRole);
+        else if (role == EntityDeclaration.ModifierRole)
+            t = new CSharpModifierToken(start, CSharpModifierToken.GetModifierValue(keyword));
+        else
+            switch (keyword)
+            {
+                case "this" when _nodes.Peek().LastOrDefault() is ThisReferenceExpression node:
+                    node.Location = start;
+                    break;
+                case "base" when _nodes.Peek().LastOrDefault() is BaseReferenceExpression node:
+                    node.Location = start;
+                    break;
+            }
+
+        if (t != null)
+        {
+            _currentList.Add(t);
+            t.Role = role;
+        }
+
+        base.WriteKeyword(role, keyword);
+    }
+
+    public override void WriteIdentifier(Identifier identifier, object data)
+    {
+        if (!identifier.IsNull)
+            identifier.SetStartLocation(_locationProvider.Location);
+
+        _currentList.Add(identifier);
+        base.WriteIdentifier(identifier, data);
+    }
+
+    public override void WritePrimitiveValue(object value, object data = null, string literalValue = null)
+    {
+        var node = _nodes.Peek().LastOrDefault() as Expression;
+        var startLocation = _locationProvider.Location;
+        base.WritePrimitiveValue(value, data, literalValue);
+
+        if (node is PrimitiveExpression primitiveExpression)
+            primitiveExpression.SetLocation(startLocation, _locationProvider.Location);
+
+        if (node is NullReferenceExpression nullReferenceExpression)
+            nullReferenceExpression.SetStartLocation(startLocation);
+    }
+
+    public override void WritePrimitiveType(string type)
+    {
+        if (_nodes.Peek().LastOrDefault() is PrimitiveType node)
+            node.SetStartLocation(_locationProvider.Location);
+
+        base.WritePrimitiveType(type);
+    }
 }

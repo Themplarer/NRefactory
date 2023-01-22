@@ -23,99 +23,82 @@ using ICSharpCode.NRefactory.TypeSystem;
 using ICSharpCode.NRefactory.TypeSystem.Implementation;
 using ICSharpCode.NRefactory.Utils;
 
-namespace ICSharpCode.NRefactory.CSharp.TypeSystem
+namespace ICSharpCode.NRefactory.CSharp.TypeSystem;
+
+[Serializable]
+public sealed class MethodTypeParameterWithInheritedConstraints : DefaultUnresolvedTypeParameter
 {
-	[Serializable]
-	public sealed class MethodTypeParameterWithInheritedConstraints : DefaultUnresolvedTypeParameter
-	{
-		public MethodTypeParameterWithInheritedConstraints(int index, string name)
-			: base(SymbolKind.Method, index, name)
-		{
-		}
-		
-		static ITypeParameter ResolveBaseTypeParameter(IMethod parentMethod, int index)
-		{
-			IMethod baseMethod = null;
-			if (parentMethod.IsOverride) {
-				foreach (IMethod m in InheritanceHelper.GetBaseMembers(parentMethod, false).OfType<IMethod>()) {
-					if (!m.IsOverride) {
-						baseMethod = m;
-						break;
-					}
-				}
-			} else if (parentMethod.IsExplicitInterfaceImplementation && parentMethod.ImplementedInterfaceMembers.Count == 1) {
-				baseMethod = parentMethod.ImplementedInterfaceMembers[0] as IMethod;
-			}
-			if (baseMethod != null && index < baseMethod.TypeParameters.Count)
-				return baseMethod.TypeParameters[index];
-			else
-				return null;
-		}
-		
-		public override ITypeParameter CreateResolvedTypeParameter(ITypeResolveContext context)
-		{
-			if (context.CurrentMember is IMethod) {
-				return new ResolvedMethodTypeParameterWithInheritedConstraints(this, context);
-			} else {
-				return base.CreateResolvedTypeParameter(context);
-			}
-		}
-		
-		sealed class ResolvedMethodTypeParameterWithInheritedConstraints : AbstractTypeParameter
-		{
-			volatile ITypeParameter baseTypeParameter;
-			
-			public ResolvedMethodTypeParameterWithInheritedConstraints(MethodTypeParameterWithInheritedConstraints unresolved, ITypeResolveContext context)
-				: base(context.CurrentMember, unresolved.Index, unresolved.Name, unresolved.Variance,
-				       unresolved.Attributes.CreateResolvedAttributes(context), unresolved.Region)
-			{
-			}
-			
-			ITypeParameter GetBaseTypeParameter()
-			{
-				ITypeParameter baseTP = this.baseTypeParameter;
-				if (baseTP == null) {
-					// ResolveBaseTypeParameter() is idempotent, so this is thread-safe.
-					this.baseTypeParameter = baseTP = ResolveBaseTypeParameter((IMethod)this.Owner, this.Index);
-				}
-				return baseTP;
-			}
-			
-			public override bool HasValueTypeConstraint {
-				get {
-					ITypeParameter baseTP = GetBaseTypeParameter();
-					return baseTP != null ? baseTP.HasValueTypeConstraint : false;
-				}
-			}
-			
-			public override bool HasReferenceTypeConstraint {
-				get {
-					ITypeParameter baseTP = GetBaseTypeParameter();
-					return baseTP != null ? baseTP.HasReferenceTypeConstraint : false;
-				}
-			}
-			
-			public override bool HasDefaultConstructorConstraint {
-				get {
-					ITypeParameter baseTP = GetBaseTypeParameter();
-					return baseTP != null ? baseTP.HasDefaultConstructorConstraint : false;
-				}
-			}
-			
-			public override IEnumerable<IType> DirectBaseTypes {
-				get {
-					ITypeParameter baseTP = GetBaseTypeParameter();
-					if (baseTP != null) {
-						// Substitute occurrences of the base method's type parameters in the constraints
-						// with the type parameters from the
-						IMethod owner = (IMethod)this.Owner;
-						var substitution = new TypeParameterSubstitution(null, new ProjectedList<ITypeParameter, IType>(owner.TypeParameters, t => t));
-						return baseTP.DirectBaseTypes.Select(t => t.AcceptVisitor(substitution));
-					} else {
-						return EmptyList<IType>.Instance;
-					}
-				}
-			}
-		}
-	}
+    public MethodTypeParameterWithInheritedConstraints(int index, string name)
+        : base(SymbolKind.Method, index, name)
+    {
+    }
+
+    public override ITypeParameter CreateResolvedTypeParameter(ITypeResolveContext context) =>
+        context.CurrentMember is IMethod
+            ? new ResolvedMethodTypeParameterWithInheritedConstraints(this, context)
+            : base.CreateResolvedTypeParameter(context);
+
+    private static ITypeParameter ResolveBaseTypeParameter(IMember parentMethod, int index) =>
+        GetMethod(parentMethod) is { } baseMethod && index < baseMethod.TypeParameters.Count
+            ? baseMethod.TypeParameters[index]
+            : null;
+
+    private static IMethod GetMethod(IMember parentMethod)
+    {
+        if (parentMethod.IsOverride)
+            return GetBaseMethod(parentMethod);
+
+        if (parentMethod.IsExplicitInterfaceImplementation && parentMethod.ImplementedInterfaceMembers.Count == 1)
+            return parentMethod.ImplementedInterfaceMembers[0] as IMethod;
+
+        return null;
+    }
+
+    private static IMethod GetBaseMethod(IMember parentMethod) =>
+        InheritanceHelper.GetBaseMembers(parentMethod, false).OfType<IMethod>().FirstOrDefault(m => !m.IsOverride);
+
+    private sealed class ResolvedMethodTypeParameterWithInheritedConstraints : AbstractTypeParameter
+    {
+        private volatile ITypeParameter _baseTypeParameter;
+
+        public ResolvedMethodTypeParameterWithInheritedConstraints(MethodTypeParameterWithInheritedConstraints unresolved, ITypeResolveContext context)
+            : base(context.CurrentMember, unresolved.Index, unresolved.Name, unresolved.Variance,
+                unresolved.Attributes.CreateResolvedAttributes(context), unresolved.Region)
+        {
+        }
+
+        ITypeParameter GetBaseTypeParameter()
+        {
+            var baseTp = _baseTypeParameter;
+
+            if (baseTp == null)
+                // ResolveBaseTypeParameter() is idempotent, so this is thread-safe.
+                _baseTypeParameter = baseTp = ResolveBaseTypeParameter((IMethod)Owner, Index);
+
+            return baseTp;
+        }
+
+        public override bool HasValueTypeConstraint => GetBaseTypeParameter()?.HasValueTypeConstraint ?? false;
+
+        public override bool HasReferenceTypeConstraint => GetBaseTypeParameter()?.HasReferenceTypeConstraint ?? false;
+
+        public override bool HasDefaultConstructorConstraint => GetBaseTypeParameter()?.HasDefaultConstructorConstraint ?? false;
+
+        public override IEnumerable<IType> DirectBaseTypes
+        {
+            get
+            {
+                if (GetBaseTypeParameter() is { } baseTp)
+                {
+                    // Substitute occurrences of the base method's type parameters in the constraints
+                    // with the type parameters from the
+                    var owner = (IMethod)Owner;
+                    var substitution = new TypeParameterSubstitution(null, new ProjectedList<ITypeParameter, IType>(owner.TypeParameters, t => t));
+                    return baseTp.DirectBaseTypes.Select(t => t.AcceptVisitor(substitution));
+                }
+
+                return EmptyList<IType>.Instance;
+            }
+        }
+    }
 }

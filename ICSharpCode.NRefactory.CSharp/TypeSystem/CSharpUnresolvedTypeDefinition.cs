@@ -21,30 +21,26 @@ using ICSharpCode.NRefactory.TypeSystem;
 using ICSharpCode.NRefactory.TypeSystem.Implementation;
 using ICSharpCode.NRefactory.Utils;
 
-namespace ICSharpCode.NRefactory.CSharp.TypeSystem
+namespace ICSharpCode.NRefactory.CSharp.TypeSystem;
+
+[Serializable]
+public class CSharpUnresolvedTypeDefinition : DefaultUnresolvedTypeDefinition
 {
-	[Serializable]
-	public class CSharpUnresolvedTypeDefinition : DefaultUnresolvedTypeDefinition
-	{
-		readonly UsingScope usingScope;
-		
-		public CSharpUnresolvedTypeDefinition(UsingScope usingScope, string name)
-			: base(usingScope.NamespaceName, name)
-		{
-			this.usingScope = usingScope;
-			this.AddDefaultConstructorIfRequired = true;
-		}
-		
-		public CSharpUnresolvedTypeDefinition(CSharpUnresolvedTypeDefinition declaringTypeDefinition, string name)
-			: base(declaringTypeDefinition, name)
-		{
-			this.usingScope = declaringTypeDefinition.usingScope;
-			this.AddDefaultConstructorIfRequired = true;
-		}
-		
-		public override ITypeResolveContext CreateResolveContext(ITypeResolveContext parentContext)
-		{
-			return new CSharpTypeResolveContext(parentContext.CurrentAssembly, usingScope.Resolve(parentContext.Compilation), parentContext.CurrentTypeDefinition);
-		}
-	}
+    private readonly UsingScope _usingScope;
+
+    public CSharpUnresolvedTypeDefinition(UsingScope usingScope, string name)
+        : base(usingScope.NamespaceName, name)
+    {
+        _usingScope = usingScope;
+        AddDefaultConstructorIfRequired = true;
+    }
+
+    public CSharpUnresolvedTypeDefinition(CSharpUnresolvedTypeDefinition declaringTypeDefinition, string name)
+        : this(declaringTypeDefinition._usingScope, name)
+    {
+    }
+
+    public override ITypeResolveContext CreateResolveContext(ITypeResolveContext parentContext) =>
+        new CSharpTypeResolveContext(parentContext.CurrentAssembly, _usingScope.Resolve(parentContext.Compilation),
+            parentContext.CurrentTypeDefinition);
 }

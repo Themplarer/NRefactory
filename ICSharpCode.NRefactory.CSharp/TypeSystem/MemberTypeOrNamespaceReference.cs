@@ -23,96 +23,82 @@ using ICSharpCode.NRefactory.Semantics;
 using ICSharpCode.NRefactory.TypeSystem;
 using ICSharpCode.NRefactory.TypeSystem.Implementation;
 
-namespace ICSharpCode.NRefactory.CSharp.TypeSystem {
-	/// <summary>
-	/// Reference to a qualified type or namespace name.
-	/// </summary>
-	[Serializable]
-	public sealed class MemberTypeOrNamespaceReference : TypeOrNamespaceReference, ISupportsInterning
-	{
-		readonly TypeOrNamespaceReference target;
-		readonly string identifier;
-		readonly IList<ITypeReference> typeArguments;
-		readonly NameLookupMode lookupMode;
-		
-		public MemberTypeOrNamespaceReference(TypeOrNamespaceReference target, string identifier, IList<ITypeReference> typeArguments, NameLookupMode lookupMode = NameLookupMode.Type)
-		{
-			if (target == null)
-				throw new ArgumentNullException("target");
-			if (identifier == null)
-				throw new ArgumentNullException("identifier");
-			this.target = target;
-			this.identifier = identifier;
-			this.typeArguments = typeArguments ?? EmptyList<ITypeReference>.Instance;
-			this.lookupMode = lookupMode;
-		}
-		
-		public string Identifier {
-			get { return identifier; }
-		}
-		
-		public TypeOrNamespaceReference Target {
-			get { return target; }
-		}
-		
-		public IList<ITypeReference> TypeArguments {
-			get { return typeArguments; }
-		}
-		
-		public NameLookupMode LookupMode {
-			get { return lookupMode; }
-		}
-		
-		/// <summary>
-		/// Adds a suffix to the identifier.
-		/// Does not modify the existing type reference, but returns a new one.
-		/// </summary>
-		public MemberTypeOrNamespaceReference AddSuffix(string suffix)
-		{
-			return new MemberTypeOrNamespaceReference(target, identifier + suffix, typeArguments, lookupMode);
-		}
-		
-		public override ResolveResult Resolve(CSharpResolver resolver)
-		{
-			ResolveResult targetRR = target.Resolve(resolver);
-			if (targetRR.IsError)
-				return targetRR;
-			IList<IType> typeArgs = typeArguments.Resolve(resolver.CurrentTypeResolveContext);
-			return resolver.ResolveMemberAccess(targetRR, identifier, typeArgs, lookupMode);
-		}
-		
-		public override IType ResolveType(CSharpResolver resolver)
-		{
-			TypeResolveResult trr = Resolve(resolver) as TypeResolveResult;
-			return trr != null ? trr.Type : new UnknownType(null, identifier, typeArguments.Count);
-		}
-		
-		public override string ToString()
-		{
-			if (typeArguments.Count == 0)
-				return target.ToString() + "." + identifier;
-			else
-				return target.ToString() + "." + identifier + "<" + string.Join(",", typeArguments) + ">";
-		}
-		
-		int ISupportsInterning.GetHashCodeForInterning()
-		{
-			int hashCode = 0;
-			unchecked {
-				hashCode += 1000000007 * target.GetHashCode();
-				hashCode += 1000000033 * identifier.GetHashCode();
-				hashCode += 1000000087 * typeArguments.GetHashCode();
-				hashCode += 1000000021 * (int)lookupMode;
-			}
-			return hashCode;
-		}
-		
-		bool ISupportsInterning.EqualsForInterning(ISupportsInterning other)
-		{
-			MemberTypeOrNamespaceReference o = other as MemberTypeOrNamespaceReference;
-			return o != null && this.target == o.target
-				&& this.identifier == o.identifier && this.typeArguments == o.typeArguments
-				&& this.lookupMode == o.lookupMode;
-		}
-	}
+namespace ICSharpCode.NRefactory.CSharp.TypeSystem;
+
+/// <summary>
+/// Reference to a qualified type or namespace name.
+/// </summary>
+[Serializable]
+public sealed class MemberTypeOrNamespaceReference : TypeOrNamespaceReference, ISupportsInterning
+{
+    private readonly TypeOrNamespaceReference _target;
+    private readonly string _identifier;
+    private readonly IList<ITypeReference> _typeArguments;
+    private readonly NameLookupMode _lookupMode;
+
+    public MemberTypeOrNamespaceReference(TypeOrNamespaceReference target, string identifier, IList<ITypeReference> typeArguments,
+        NameLookupMode lookupMode = NameLookupMode.Type)
+    {
+        _target = target ?? throw new ArgumentNullException(nameof(target));
+        _identifier = identifier ?? throw new ArgumentNullException(nameof(identifier));
+        _typeArguments = typeArguments ?? EmptyList<ITypeReference>.Instance;
+        _lookupMode = lookupMode;
+    }
+
+    public string Identifier => _identifier;
+
+    public TypeOrNamespaceReference Target => _target;
+
+    public IList<ITypeReference> TypeArguments => _typeArguments;
+
+    public NameLookupMode LookupMode => _lookupMode;
+
+    /// <summary>
+    /// Adds a suffix to the identifier.
+    /// Does not modify the existing type reference, but returns a new one.
+    /// </summary>
+    public MemberTypeOrNamespaceReference AddSuffix(string suffix) => new(_target, _identifier + suffix, _typeArguments, _lookupMode);
+
+    public override ResolveResult Resolve(CSharpResolver resolver)
+    {
+        var targetRr = _target.Resolve(resolver);
+
+        if (targetRr.IsError)
+            return targetRr;
+
+        var typeArgs = _typeArguments.Resolve(resolver.CurrentTypeResolveContext);
+        return resolver.ResolveMemberAccess(targetRr, _identifier, typeArgs, _lookupMode);
+    }
+
+    public override IType ResolveType(CSharpResolver resolver) =>
+        Resolve(resolver) is TypeResolveResult trr
+            ? trr.Type
+            : new UnknownType(null, _identifier, _typeArguments.Count);
+
+    public override string ToString() =>
+        _typeArguments.Count == 0
+            ? _target + "." + _identifier
+            : _target + "." + _identifier + "<" + string.Join(",", _typeArguments) + ">";
+
+    int ISupportsInterning.GetHashCodeForInterning()
+    {
+        var hashCode = 0;
+
+        unchecked
+        {
+            hashCode += 1000000007 * _target.GetHashCode();
+            hashCode += 1000000033 * _identifier.GetHashCode();
+            hashCode += 1000000087 * _typeArguments.GetHashCode();
+            hashCode += 1000000021 * (int)_lookupMode;
+        }
+
+        return hashCode;
+    }
+
+    bool ISupportsInterning.EqualsForInterning(ISupportsInterning other) =>
+        other is MemberTypeOrNamespaceReference o &&
+        _target == o._target &&
+        _identifier == o._identifier &&
+        _typeArguments == o._typeArguments &&
+        _lookupMode == o._lookupMode;
 }

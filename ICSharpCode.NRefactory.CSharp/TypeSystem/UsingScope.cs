@@ -18,153 +18,114 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using ICSharpCode.NRefactory.TypeSystem;
 using ICSharpCode.NRefactory.TypeSystem.Implementation;
-using ICSharpCode.NRefactory.Utils;
 
-namespace ICSharpCode.NRefactory.CSharp.TypeSystem {
-	/// <summary>
-	/// Represents a scope that contains "using" statements.
-	/// This is either the file itself, or a namespace declaration.
-	/// </summary>
-	[Serializable]
-	public class UsingScope : AbstractFreezable
-	{
-		readonly UsingScope parent;
-		DomRegion region;
-		string shortName = "";
-		IList<TypeOrNamespaceReference> usings;
-		IList<KeyValuePair<string, TypeOrNamespaceReference>> usingAliases;
-		IList<string> externAliases;
-		
-		protected override void FreezeInternal()
-		{
-			usings = FreezableHelper.FreezeList(usings);
-			usingAliases = FreezableHelper.FreezeList(usingAliases);
-			externAliases = FreezableHelper.FreezeList(externAliases);
-			
-			// In current model (no child scopes), it makes sense to freeze the parent as well
-			// to ensure the whole lookup chain is immutable.
-			if (parent != null)
-				parent.Freeze();
-			
-			base.FreezeInternal();
-		}
-		
-		/// <summary>
-		/// Creates a new root using scope.
-		/// </summary>
-		public UsingScope()
-		{
-		}
-		
-		/// <summary>
-		/// Creates a new nested using scope.
-		/// </summary>
-		/// <param name="parent">The parent using scope.</param>
-		/// <param name="shortName">The short namespace name.</param>
-		public UsingScope(UsingScope parent, string shortName)
-		{
-			if (parent == null)
-				throw new ArgumentNullException("parent");
-			if (shortName == null)
-				throw new ArgumentNullException("shortName");
-			this.parent = parent;
-			this.shortName = shortName;
-		}
-		
-		public UsingScope Parent {
-			get { return parent; }
-		}
-		
-		public DomRegion Region {
-			get { return region; }
-			set {
-				FreezableHelper.ThrowIfFrozen(this);
-				region = value;
-			}
-		}
-		
-		public string ShortNamespaceName {
-			get {
-				return shortName;
-			}
-		}
-		
-		public string NamespaceName {
-			get {
-				if (parent != null)
-					return NamespaceDeclaration.BuildQualifiedName(parent.NamespaceName, shortName);
-				else
-					return shortName;
-			}
-//			set {
-//				if (value == null)
-//					throw new ArgumentNullException("NamespaceName");
-//				FreezableHelper.ThrowIfFrozen(this);
-//				namespaceName = value;
-//			}
-		}
-		
-		public IList<TypeOrNamespaceReference> Usings {
-			get {
-				if (usings == null)
-					usings = new List<TypeOrNamespaceReference>();
-				return usings;
-			}
-		}
-		
-		public IList<KeyValuePair<string, TypeOrNamespaceReference>> UsingAliases {
-			get {
-				if (usingAliases == null)
-					usingAliases = new List<KeyValuePair<string, TypeOrNamespaceReference>>();
-				return usingAliases;
-			}
-		}
-		
-		public IList<string> ExternAliases {
-			get {
-				if (externAliases == null)
-					externAliases = new List<string>();
-				return externAliases;
-			}
-		}
-		
-//		public IList<UsingScope> ChildScopes {
-//			get {
-//				if (childScopes == null)
-//					childScopes = new List<UsingScope>();
-//				return childScopes;
-//			}
-//		}
-		
-		/// <summary>
-		/// Gets whether this using scope has an alias (either using or extern)
-		/// with the specified name.
-		/// </summary>
-		public bool HasAlias(string identifier)
-		{
-			if (usingAliases != null) {
-				foreach (var pair in usingAliases) {
-					if (pair.Key == identifier)
-						return true;
-				}
-			}
-			return externAliases != null && externAliases.Contains(identifier);
-		}
-		
-		/// <summary>
-		/// Resolves the namespace represented by this using scope.
-		/// </summary>
-		public ResolvedUsingScope Resolve(ICompilation compilation)
-		{
-			CacheManager cache = compilation.CacheManager;
-			ResolvedUsingScope resolved = cache.GetShared(this) as ResolvedUsingScope;
-			if (resolved == null) {
-				var csContext = new CSharpTypeResolveContext(compilation.MainAssembly, parent != null ? parent.Resolve(compilation) : null);
-				resolved = (ResolvedUsingScope)cache.GetOrAddShared(this, new ResolvedUsingScope(csContext, this));
-			}
-			return resolved;
-		}
-	}
+namespace ICSharpCode.NRefactory.CSharp.TypeSystem;
+
+/// <summary>
+/// Represents a scope that contains "using" statements.
+/// This is either the file itself, or a namespace declaration.
+/// </summary>
+[Serializable]
+public class UsingScope : AbstractFreezable
+{
+    private DomRegion _region;
+    private IList<TypeOrNamespaceReference> _usings;
+    private IList<KeyValuePair<string, TypeOrNamespaceReference>> _usingAliases;
+    private IList<string> _externAliases;
+
+    /// <summary>
+    /// Creates a new root using scope.
+    /// </summary>
+    public UsingScope()
+    {
+    }
+
+    /// <summary>
+    /// Creates a new nested using scope.
+    /// </summary>
+    /// <param name="parent">The parent using scope.</param>
+    /// <param name="shortName">The short namespace name.</param>
+    public UsingScope(UsingScope parent, string shortName)
+    {
+        Parent = parent ?? throw new ArgumentNullException(nameof(parent));
+        ShortNamespaceName = shortName ?? throw new ArgumentNullException(nameof(shortName));
+    }
+
+    public UsingScope Parent { get; }
+
+    public DomRegion Region
+    {
+        get => _region;
+        set
+        {
+            FreezableHelper.ThrowIfFrozen(this);
+            _region = value;
+        }
+    }
+
+    public string ShortNamespaceName { get; } = "";
+
+    public string NamespaceName =>
+        Parent != null
+            ? NamespaceDeclaration.BuildQualifiedName(Parent.NamespaceName, ShortNamespaceName)
+            : ShortNamespaceName;
+
+    //			set {
+    //				if (value == null)
+    //					throw new ArgumentNullException("NamespaceName");
+    //				FreezableHelper.ThrowIfFrozen(this);
+    //				namespaceName = value;
+    //			}
+
+    public IList<TypeOrNamespaceReference> Usings => _usings ??= new List<TypeOrNamespaceReference>();
+
+    public IList<KeyValuePair<string, TypeOrNamespaceReference>> UsingAliases =>
+        _usingAliases ??= new List<KeyValuePair<string, TypeOrNamespaceReference>>();
+
+    public IList<string> ExternAliases => _externAliases ??= new List<string>();
+
+    //		public IList<UsingScope> ChildScopes {
+    //			get {
+    //				if (childScopes == null)
+    //					childScopes = new List<UsingScope>();
+    //				return childScopes;
+    //			}
+    //		}
+
+    protected override void FreezeInternal()
+    {
+        _usings = FreezableHelper.FreezeList(_usings);
+        _usingAliases = FreezableHelper.FreezeList(_usingAliases);
+        _externAliases = FreezableHelper.FreezeList(_externAliases);
+
+        // In current model (no child scopes), it makes sense to freeze the parent as well
+        // to ensure the whole lookup chain is immutable.
+        Parent?.Freeze();
+        base.FreezeInternal();
+    }
+
+    /// <summary>
+    /// Gets whether this using scope has an alias (either using or extern)
+    /// with the specified name.
+    /// </summary>
+    public bool HasAlias(string identifier) =>
+        _usingAliases != null && _usingAliases.Any(pair => pair.Key == identifier) ||
+        _externAliases != null && _externAliases.Contains(identifier);
+
+    /// <summary>
+    /// Resolves the namespace represented by this using scope.
+    /// </summary>
+    public ResolvedUsingScope Resolve(ICompilation compilation)
+    {
+        if (compilation.CacheManager is var cache && cache.GetShared(this) is not ResolvedUsingScope resolved)
+        {
+            var csContext = new CSharpTypeResolveContext(compilation.MainAssembly, Parent?.Resolve(compilation));
+            resolved = (ResolvedUsingScope)cache.GetOrAddShared(this, new ResolvedUsingScope(csContext, this));
+        }
+
+        return resolved;
+    }
 }

@@ -21,234 +21,102 @@ using System.IO;
 using dnSpy.Contracts.Decompiler;
 using dnSpy.Contracts.Text;
 
-namespace ICSharpCode.NRefactory.CSharp {
-	public abstract class TokenWriter
-	{
-		public abstract void StartNode(AstNode node);
-		public abstract void EndNode(AstNode node);
+namespace ICSharpCode.NRefactory.CSharp;
 
-		public virtual void WriteSpecialsUpToNode(AstNode node) { }
+public abstract class TokenWriter
+{
+    public abstract void StartNode(AstNode node);
 
-		/// <summary>
-		/// Writes an identifier.
-		/// </summary>
-		public abstract void WriteIdentifier(Identifier identifier, object data);
-		
-		/// <summary>
-		/// Writes a keyword to the output.
-		/// </summary>
-		public abstract void WriteKeyword(Role role, string keyword);
-		
-		/// <summary>
-		/// Writes a token to the output.
-		/// </summary>
-		public abstract void WriteToken(Role role, string token, object data);
-		
-		/// <summary>
-		/// Writes a primitive/literal value
-		/// </summary>
-		public abstract void WritePrimitiveValue(object value, object data = null, string literalValue = null);
-		
-		public abstract void WritePrimitiveType(string type);
-		
-		public abstract void Space();
-		public abstract void Indent();
-		public abstract void Unindent();
-		public abstract void NewLine();
-		
-		public abstract void WriteComment(CommentType commentType, string content, CommentReference[] refs);
-		public abstract void WritePreProcessorDirective(PreProcessorDirectiveType type, string argument);
-		
-		public static TokenWriter Create(TextWriter writer, string indentation = "\t")
-		{
-			return new InsertSpecialsDecorator(new InsertRequiredSpacesDecorator(new TextWriterTokenWriter(writer) { IndentationString = indentation }));
-		}
-		
-		public static TokenWriter CreateWriterThatSetsLocationsInAST(TextWriter writer, string indentation = "\t")
-		{
-			var target = new TextWriterTokenWriter(writer) { IndentationString = indentation };
-			return new InsertSpecialsDecorator(new InsertRequiredSpacesDecorator(new InsertMissingTokensDecorator(target, target)));
-		}
-		
-		public static TokenWriter WrapInWriterThatSetsLocationsInAST(TokenWriter writer)
-		{
-			if (!(writer is ILocatable))
-				throw new InvalidOperationException("writer does not provide locations!");
-			return new InsertSpecialsDecorator(new InsertRequiredSpacesDecorator(new InsertMissingTokensDecorator(writer, (ILocatable)writer)));
-		}
+    public abstract void EndNode(AstNode node);
 
-		public virtual void DebugStart(AstNode node, int? start)
-		{
-		}
+    public virtual void WriteSpecialsUpToNode(AstNode node)
+    {
+    }
 
-		public virtual void DebugHidden(AstNode hiddenNode)
-		{
-		}
+    /// <summary>
+    /// Writes an identifier.
+    /// </summary>
+    public abstract void WriteIdentifier(Identifier identifier, object data);
 
-		public virtual void DebugExpression(AstNode node)
-		{
-		}
+    /// <summary>
+    /// Writes a keyword to the output.
+    /// </summary>
+    public abstract void WriteKeyword(Role role, string keyword);
 
-		public virtual void DebugEnd(AstNode node, int? end)
-		{
-		}
+    /// <summary>
+    /// Writes a token to the output.
+    /// </summary>
+    public abstract void WriteToken(Role role, string token, object data);
 
-		// Don't use Location prop since it's used by ILocatable. We want that whoever can provide
-		// this value can do it so we can't check the writer to see if it implements ILocatable
-		public virtual int? GetLocation()
-		{
-			return null;
-		}
+    /// <summary>
+    /// Writes a primitive/literal value
+    /// </summary>
+    public abstract void WritePrimitiveValue(object value, object data = null, string literalValue = null);
 
-		public void WriteTokenOperator(Role tokenRole, string token)
-		{
-			WriteToken(tokenRole, token, BoxedTextColor.Operator);
-		}
+    public abstract void WritePrimitiveType(string type);
 
-		public void WriteTokenPunctuation(Role tokenRole, string token)
-		{
-			WriteToken(tokenRole, token, BoxedTextColor.Punctuation);
-		}
+    public abstract void Space();
 
-		public virtual void AddHighlightedKeywordReference(object reference, int start, int end)
-		{
-		}
+    public abstract void Indent();
 
-		public virtual void AddBracePair(int leftStart, int leftEnd, int rightStart, int rightEnd, CodeBracesRangeFlags flags)
-		{
-		}
+    public abstract void Unindent();
 
-		public virtual void AddLineSeparator(int position)
-		{
-		}
-	}
-	
-	public interface ILocatable
-	{
-		TextLocation Location { get; }
-	}
-	
-	public abstract class DecoratingTokenWriter : TokenWriter
-	{
-		TokenWriter decoratedWriter;
-		
-		protected DecoratingTokenWriter(TokenWriter decoratedWriter)
-		{
-			if (decoratedWriter == null)
-				throw new ArgumentNullException("decoratedWriter");
-			this.decoratedWriter = decoratedWriter;
-		}
-		
-		public override void StartNode(AstNode node)
-		{
-			decoratedWriter.StartNode(node);
-		}
-		
-		public override void EndNode(AstNode node)
-		{
-			decoratedWriter.EndNode(node);
-		}
+    public abstract void NewLine();
 
-		public override void WriteSpecialsUpToNode(AstNode node)
-		{
-			decoratedWriter.WriteSpecialsUpToNode(node);
-		}
+    public abstract void WriteComment(CommentType commentType, string content, CommentReference[] refs);
 
-		public override void WriteIdentifier(Identifier identifier, object data)
-		{
-			decoratedWriter.WriteIdentifier(identifier, data);
-		}
-		
-		public override void WriteKeyword(Role role, string keyword)
-		{
-			decoratedWriter.WriteKeyword(role, keyword);
-		}
-		
-		public override void WriteToken(Role role, string token, object data)
-		{
-			decoratedWriter.WriteToken(role, token, data);
-		}
-		
-		public override void WritePrimitiveValue(object value, object data = null, string literalValue = null)
-		{
-			decoratedWriter.WritePrimitiveValue(value, data, literalValue);
-		}
-		
-		public override void WritePrimitiveType(string type)
-		{
-			decoratedWriter.WritePrimitiveType(type);
-		}
-		
-		public override void Space()
-		{
-			decoratedWriter.Space();
-		}
-		
-		public override void Indent()
-		{
-			decoratedWriter.Indent();
-		}
-		
-		public override void Unindent()
-		{
-			decoratedWriter.Unindent();
-		}
-		
-		public override void NewLine()
-		{
-			decoratedWriter.NewLine();
-		}
-		
-		public override void WriteComment(CommentType commentType, string content, CommentReference[] refs)
-		{
-			decoratedWriter.WriteComment(commentType, content, refs);
-		}
-		
-		public override void WritePreProcessorDirective(PreProcessorDirectiveType type, string argument)
-		{
-			decoratedWriter.WritePreProcessorDirective(type, argument);
-		}
+    public abstract void WritePreProcessorDirective(PreProcessorDirectiveType type, string argument);
 
-		public override void DebugStart(AstNode node, int? start)
-		{
-			decoratedWriter.DebugStart(node, start);
-		}
+    public static TokenWriter Create(TextWriter writer, string indentation = "\t") =>
+        new InsertSpecialsDecorator(new InsertRequiredSpacesDecorator(new TextWriterTokenWriter(writer)
+        {
+            IndentationString = indentation
+        }));
 
-		public override void DebugHidden(AstNode hiddenNode)
-		{
-			decoratedWriter.DebugHidden(hiddenNode);
-		}
+    public static TokenWriter CreateWriterThatSetsLocationsInAST(TextWriter writer, string indentation = "\t")
+    {
+        var target = new TextWriterTokenWriter(writer) { IndentationString = indentation };
+        return new InsertSpecialsDecorator(new InsertRequiredSpacesDecorator(new InsertMissingTokensDecorator(target, target)));
+    }
 
-		public override void DebugExpression(AstNode node)
-		{
-			decoratedWriter.DebugExpression(node);
-		}
+    public static TokenWriter WrapInWriterThatSetsLocationsInAST(TokenWriter writer) =>
+        writer is not ILocatable locatable
+            ? throw new InvalidOperationException("writer does not provide locations!")
+            : new InsertSpecialsDecorator(new InsertRequiredSpacesDecorator(new InsertMissingTokensDecorator(writer, locatable)));
 
-		public override void DebugEnd(AstNode node, int? end)
-		{
-			decoratedWriter.DebugEnd(node, end);
-		}
+    public virtual void DebugStart(AstNode node, int? start)
+    {
+    }
 
-		public override int? GetLocation()
-		{
-			return decoratedWriter.GetLocation();
-		}
+    public virtual void DebugHidden(AstNode hiddenNode)
+    {
+    }
 
-		public override void AddHighlightedKeywordReference(object reference, int start, int end)
-		{
-			decoratedWriter.AddHighlightedKeywordReference(reference, start, end);
-		}
+    public virtual void DebugExpression(AstNode node)
+    {
+    }
 
-		public override void AddBracePair(int leftStart, int leftEnd, int rightStart, int rightEnd, CodeBracesRangeFlags flags)
-		{
-			decoratedWriter.AddBracePair(leftStart, leftEnd, rightStart, rightEnd, flags);
-		}
+    public virtual void DebugEnd(AstNode node, int? end)
+    {
+    }
 
-		public override void AddLineSeparator(int position)
-		{
-			decoratedWriter.AddLineSeparator(position);
-		}
-	}
+    // Don't use Location prop since it's used by ILocatable. We want that whoever can provide
+    // this value can do it so we can't check the writer to see if it implements ILocatable
+    public virtual int? GetLocation() => null;
+
+    public void WriteTokenOperator(Role tokenRole, string token) => WriteToken(tokenRole, token, BoxedTextColor.Operator);
+
+    public void WriteTokenPunctuation(Role tokenRole, string token) => WriteToken(tokenRole, token, BoxedTextColor.Punctuation);
+
+    public virtual void AddHighlightedKeywordReference(object reference, int start, int end)
+    {
+    }
+
+    public virtual void AddBracePair(int leftStart, int leftEnd, int rightStart, int rightEnd, CodeBracesRangeFlags flags)
+    {
+    }
+
+    public virtual void AddLineSeparator(int position)
+    {
+    }
 }
-
-

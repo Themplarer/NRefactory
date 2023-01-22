@@ -24,184 +24,153 @@ using ICSharpCode.NRefactory.CSharp.Resolver;
 using ICSharpCode.NRefactory.CSharp.TypeSystem;
 using ICSharpCode.NRefactory.Semantics;
 
-namespace ICSharpCode.NRefactory.CSharp.Analysis {
-	/// <summary>
-	/// Statement reachability analysis.
-	/// </summary>
-	public sealed class ReachabilityAnalysis
-	{
-		HashSet<Statement> reachableStatements = new HashSet<Statement>();
-		HashSet<Statement> reachableEndPoints = new HashSet<Statement>();
-		HashSet<ControlFlowNode> visitedNodes = new HashSet<ControlFlowNode>();
-		Stack<ControlFlowNode> stack = new Stack<ControlFlowNode>();
-		RecursiveDetectorVisitor recursiveDetectorVisitor = null;
-		
-		private ReachabilityAnalysis() {}
-		
-		public static ReachabilityAnalysis Create(Statement statement, CSharpAstResolver resolver = null, RecursiveDetectorVisitor recursiveDetectorVisitor = null, CancellationToken cancellationToken = default(CancellationToken))
-		{
-			var cfgBuilder = new ControlFlowGraphBuilder();
-			var cfg = cfgBuilder.BuildControlFlowGraph(statement, resolver, cancellationToken);
-			return Create(cfg, recursiveDetectorVisitor, cancellationToken);
-		}
-		
-		internal static ReachabilityAnalysis Create(Statement statement, Func<AstNode, CancellationToken, ResolveResult> resolver, CSharpTypeResolveContext typeResolveContext, CancellationToken cancellationToken)
-		{
-			var cfgBuilder = new ControlFlowGraphBuilder();
-			var cfg = cfgBuilder.BuildControlFlowGraph(statement, resolver, typeResolveContext, cancellationToken);
-			return Create(cfg, null, cancellationToken);
-		}
-		
-		public static ReachabilityAnalysis Create(IList<ControlFlowNode> controlFlowGraph, RecursiveDetectorVisitor recursiveDetectorVisitor = null, CancellationToken cancellationToken = default(CancellationToken))
-		{
-			if (controlFlowGraph == null)
-				throw new ArgumentNullException("controlFlowGraph");
-			ReachabilityAnalysis ra = new ReachabilityAnalysis();
-			ra.recursiveDetectorVisitor = recursiveDetectorVisitor;
-			// Analysing a null node can result in an empty control flow graph
-			if (controlFlowGraph.Count > 0) {
-				ra.stack.Push(controlFlowGraph[0]);
-				while (ra.stack.Count > 0) {
-					cancellationToken.ThrowIfCancellationRequested();
-					ra.MarkReachable(ra.stack.Pop());
-				}
-			}
-			ra.stack = null;
-			ra.visitedNodes = null;
-			return ra;
-		}
-		
-		void MarkReachable(ControlFlowNode node)
-		{
-			if (node.PreviousStatement != null) {
-				if (node.PreviousStatement is LabelStatement) {
-					reachableStatements.Add(node.PreviousStatement);
-				}
-				reachableEndPoints.Add(node.PreviousStatement);
-			}
-			if (node.NextStatement != null) {
-				reachableStatements.Add(node.NextStatement);
-				if (IsRecursive(node.NextStatement)) {
-					return;
-				}
-			}
-			foreach (var edge in node.Outgoing) {
-				if (visitedNodes.Add(edge.To))
-					stack.Push(edge.To);
-			}
-		}
+namespace ICSharpCode.NRefactory.CSharp.Analysis;
 
-		bool IsRecursive(Statement statement)
-		{
-			return recursiveDetectorVisitor != null && statement.AcceptVisitor(recursiveDetectorVisitor);
-		}
-		
-		public IEnumerable<Statement> ReachableStatements {
-			get { return reachableStatements; }
-		}
-		
-		public bool IsReachable(Statement statement)
-		{
-			return reachableStatements.Contains(statement);
-		}
-		
-		public bool IsEndpointReachable(Statement statement)
-		{
-			return reachableEndPoints.Contains(statement);
-		}
+/// <summary>
+/// Statement reachability analysis.
+/// </summary>
+public sealed class ReachabilityAnalysis
+{
+    private readonly HashSet<Statement> _reachableStatements = new();
+    private readonly HashSet<Statement> _reachableEndPoints = new();
+    private HashSet<ControlFlowNode> _visitedNodes = new();
+    private Stack<ControlFlowNode> _stack = new();
+    private RecursiveDetectorVisitor _recursiveDetectorVisitor;
 
-		public class RecursiveDetectorVisitor : DepthFirstAstVisitor<bool>
-		{
-			public override bool VisitConditionalExpression(ConditionalExpression conditionalExpression)
-			{
-				if (conditionalExpression.Condition.AcceptVisitor(this))
-					return true;
+    public static ReachabilityAnalysis Create(Statement statement, CSharpAstResolver resolver = null,
+        RecursiveDetectorVisitor recursiveDetectorVisitor = null, CancellationToken cancellationToken = default)
+    {
+        var cfgBuilder = new ControlFlowGraphBuilder();
+        var cfg = cfgBuilder.BuildControlFlowGraph(statement, resolver, cancellationToken);
+        return Create(cfg, recursiveDetectorVisitor, cancellationToken);
+    }
 
-				if (!conditionalExpression.TrueExpression.AcceptVisitor(this))
-					return false;
+    internal static ReachabilityAnalysis Create(Statement statement, Func<AstNode, CancellationToken, ResolveResult> resolver,
+        CSharpTypeResolveContext typeResolveContext, CancellationToken cancellationToken)
+    {
+        var cfgBuilder = new ControlFlowGraphBuilder();
+        var cfg = cfgBuilder.BuildControlFlowGraph(statement, resolver, typeResolveContext, cancellationToken);
+        return Create(cfg, cancellationToken: cancellationToken);
+    }
 
-				return conditionalExpression.FalseExpression.AcceptVisitor(this);
-			}
+    public static ReachabilityAnalysis Create(IList<ControlFlowNode> controlFlowGraph, RecursiveDetectorVisitor recursiveDetectorVisitor = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (controlFlowGraph == null)
+            throw new ArgumentNullException(nameof(controlFlowGraph));
 
-			public override bool VisitBinaryOperatorExpression(BinaryOperatorExpression binaryOperatorExpression)
-			{
-				if (binaryOperatorExpression.Operator == BinaryOperatorType.NullCoalescing) {
-					return binaryOperatorExpression.Left.AcceptVisitor(this);
-				}
-				return base.VisitBinaryOperatorExpression(binaryOperatorExpression);
-			}
+        var reachabilityAnalysis = new ReachabilityAnalysis
+        {
+            _recursiveDetectorVisitor = recursiveDetectorVisitor
+        };
 
-			public override bool VisitIfElseStatement(IfElseStatement ifElseStatement)
-			{
-				if (ifElseStatement.Condition.AcceptVisitor(this))
-					return true;
+        // Analysing a null node can result in an empty control flow graph
+        if (controlFlowGraph.Count > 0)
+        {
+            reachabilityAnalysis._stack.Push(controlFlowGraph[0]);
 
-				if (!ifElseStatement.TrueStatement.AcceptVisitor(this))
-					return false;
+            while (reachabilityAnalysis._stack.Count > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                reachabilityAnalysis.MarkReachable(reachabilityAnalysis._stack.Pop());
+            }
+        }
 
-				//No need to worry about null ast nodes, since AcceptVisitor will just
-				//return false in those cases
-				return ifElseStatement.FalseStatement.AcceptVisitor(this);
-			}
+        reachabilityAnalysis._stack = null;
+        reachabilityAnalysis._visitedNodes = null;
+        return reachabilityAnalysis;
+    }
 
-			public override bool VisitForeachStatement(ForeachStatement foreachStatement)
-			{
-				//Even if the body is always recursive, the function may stop if the collection
-				// is empty.
-				return foreachStatement.InExpression.AcceptVisitor(this);
-			}
+    private void MarkReachable(ControlFlowNode node)
+    {
+        if (node.PreviousStatement != null)
+        {
+            if (node.PreviousStatement is LabelStatement)
+                _reachableStatements.Add(node.PreviousStatement);
 
-			public override bool VisitForStatement(ForStatement forStatement)
-			{
-				if (forStatement.Initializers.Any(initializer => initializer.AcceptVisitor(this)))
-					return true;
+            _reachableEndPoints.Add(node.PreviousStatement);
+        }
 
-				return forStatement.Condition.AcceptVisitor(this);
-			}
+        if (node.NextStatement != null)
+        {
+            _reachableStatements.Add(node.NextStatement);
 
-			public override bool VisitSwitchStatement(SwitchStatement switchStatement)
-			{
-				if (switchStatement.Expression.AcceptVisitor(this)) {
-					return true;
-				}
+            if (IsRecursive(node.NextStatement))
+                return;
+        }
 
-				bool foundDefault = false;
-				foreach (var section in switchStatement.SwitchSections) {
-					foundDefault = foundDefault || section.CaseLabels.Any(label => label.Expression.IsNull);
-					if (!section.AcceptVisitor(this))
-						return false;
-				}
+        foreach (var edge in node.Outgoing)
+            if (_visitedNodes.Add(edge.To))
+                _stack.Push(edge.To);
+    }
 
-				return foundDefault;
-			}
+    private bool IsRecursive(Statement statement) => _recursiveDetectorVisitor != null && statement.AcceptVisitor(_recursiveDetectorVisitor);
 
-			public override bool VisitBlockStatement(BlockStatement blockStatement)
-			{
-				//If the block has a recursive statement, then that statement will be visited
-				//individually by the CFG construction algorithm later.
-				return false;
-			}
+    public IEnumerable<Statement> ReachableStatements => _reachableStatements;
 
-			protected override bool VisitChildren(AstNode node)
-			{
-				return VisitNodeList(node.Children);
-			}
+    public bool IsReachable(Statement statement) => _reachableStatements.Contains(statement);
 
-			bool VisitNodeList(IEnumerable<AstNode> nodes) {
-				return nodes.Any(node => node.AcceptVisitor(this));
-			}
+    public bool IsEndpointReachable(Statement statement) => _reachableEndPoints.Contains(statement);
 
-			public override bool VisitQueryExpression(QueryExpression queryExpression)
-			{
-				//We only care about the first from clause because:
-				//in "from x in Method() select x", Method() might be recursive
-				//but in "from x in Bar() from y in Method() select x + y", even if Method() is recursive
-				//Bar might still be empty.
-				var queryFromClause = queryExpression.Clauses.OfType<QueryFromClause>().FirstOrDefault();
-				if (queryFromClause == null)
-					return true;
-				return queryFromClause.AcceptVisitor(this);
-			}
-		}
-	}
+    public class RecursiveDetectorVisitor : DepthFirstAstVisitor<bool>
+    {
+        public override bool VisitConditionalExpression(ConditionalExpression conditionalExpression) =>
+            conditionalExpression.Condition.AcceptVisitor(this) ||
+            conditionalExpression.TrueExpression.AcceptVisitor(this) &&
+            conditionalExpression.FalseExpression.AcceptVisitor(this);
+
+        public override bool VisitBinaryOperatorExpression(BinaryOperatorExpression binaryOperatorExpression) =>
+            binaryOperatorExpression.Operator == BinaryOperatorType.NullCoalescing
+                ? binaryOperatorExpression.Left.AcceptVisitor(this)
+                : base.VisitBinaryOperatorExpression(binaryOperatorExpression);
+
+        public override bool VisitIfElseStatement(IfElseStatement ifElseStatement) =>
+            ifElseStatement.Condition.AcceptVisitor(this) ||
+            // No need to worry about null ast nodes, since AcceptVisitor will just return false in those cases
+            ifElseStatement.TrueStatement.AcceptVisitor(this) &&
+            ifElseStatement.FalseStatement.AcceptVisitor(this);
+
+        public override bool VisitForeachStatement(ForeachStatement foreachStatement) =>
+            // Even if the body is always recursive, the function may stop if the collection is empty.
+            foreachStatement.InExpression.AcceptVisitor(this);
+
+        public override bool VisitForStatement(ForStatement forStatement) =>
+            forStatement.Initializers.Any(initializer => initializer.AcceptVisitor(this)) ||
+            forStatement.Condition.AcceptVisitor(this);
+
+        public override bool VisitSwitchStatement(SwitchStatement switchStatement)
+        {
+            if (switchStatement.Expression.AcceptVisitor(this))
+                return true;
+
+            var foundDefault = false;
+
+            foreach (var section in switchStatement.SwitchSections)
+            {
+                foundDefault = foundDefault || section.CaseLabels.Any(label => label.Expression.IsNull);
+
+                if (!section.AcceptVisitor(this))
+                    return false;
+            }
+
+            return foundDefault;
+        }
+
+        public override bool VisitBlockStatement(BlockStatement blockStatement) =>
+            // If the block has a recursive statement, then that statement will be visited
+            // individually by the CFG construction algorithm later.
+            false;
+
+        protected override bool VisitChildren(AstNode node) => VisitNodeList(node.Children);
+
+        private bool VisitNodeList(IEnumerable<AstNode> nodes) => nodes.Any(node => node.AcceptVisitor(this));
+
+        public override bool VisitQueryExpression(QueryExpression queryExpression) =>
+            // We only care about the first from clause because:
+            // in "from x in Method() select x", Method() might be recursive
+            // but in "from x in Bar() from y in Method() select x + y", even if Method() is recursive
+            // Bar might still be empty.
+            queryExpression.Clauses.OfType<QueryFromClause>().FirstOrDefault() is var queryFromClause &&
+            (queryFromClause == null || queryFromClause.AcceptVisitor(this));
+    }
 }

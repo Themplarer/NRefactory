@@ -19,135 +19,133 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 
-namespace ICSharpCode.NRefactory.CSharp {
-	class InsertSpecialsDecorator : DecoratingTokenWriter
-	{
-		readonly Stack<AstNode> positionStack = new Stack<AstNode>();
-		int visitorWroteNewLine = 0;
+namespace ICSharpCode.NRefactory.CSharp;
 
-		public InsertSpecialsDecorator(TokenWriter writer) : base(writer)
-		{
-		}
+internal class InsertSpecialsDecorator : DecoratingTokenWriter
+{
+    private readonly Stack<AstNode> _positionStack = new();
+    private int _visitorWroteNewLine;
 
-		public override void StartNode(AstNode node)
-		{
-			if (positionStack.Count > 0) {
-				WriteSpecialsUpToNode(node);
-			}
-			positionStack.Push(node.FirstChild);
-			base.StartNode(node);
-		}
+    public InsertSpecialsDecorator(TokenWriter writer) : base(writer)
+    {
+    }
 
-		public override void EndNode(AstNode node)
-		{
-			base.EndNode(node);
-			AstNode pos = positionStack.Pop();
-			Debug.Assert(pos == null || pos.Parent == node);
-			WriteSpecials(pos, null);
-		}
+    public override void StartNode(AstNode node)
+    {
+        if (_positionStack.Count > 0)
+            WriteSpecialsUpToNode(node);
 
-		public override void WriteKeyword(Role role, string keyword)
-		{
-			if (role != null) {
-				WriteSpecialsUpToRole(role);
-			}
-			base.WriteKeyword(role, keyword);
-		}
+        _positionStack.Push(node.FirstChild);
+        base.StartNode(node);
+    }
 
-		public override void WriteIdentifier(Identifier identifier, object data)
-		{
-			WriteSpecialsUpToRole(identifier.Role ?? Roles.Identifier);
-			base.WriteIdentifier(identifier, data);
-		}
+    public override void EndNode(AstNode node)
+    {
+        base.EndNode(node);
+        var pos = _positionStack.Pop();
+        Debug.Assert(pos == null || pos.Parent == node);
+        WriteSpecials(pos, null);
+    }
 
-		public override void WriteToken(Role role, string token, object data)
-		{
-			WriteSpecialsUpToRole(role);
-			base.WriteToken(role, token, data);
-		}
+    public override void WriteKeyword(Role role, string keyword)
+    {
+        if (role != null)
+            WriteSpecialsUpToRole(role);
 
-		public override void NewLine()
-		{
-			if (visitorWroteNewLine >= 0)
-				base.NewLine();
-			visitorWroteNewLine++;
-		}
+        base.WriteKeyword(role, keyword);
+    }
 
-		#region WriteSpecials
-		/// <summary>
-		/// Writes all specials from start to end (exclusive). Does not touch the positionStack.
-		/// </summary>
-		void WriteSpecials(AstNode start, AstNode end)
-		{
-			for (AstNode pos = start; pos != end; pos = pos.NextSibling) {
-				if (pos.Role == Roles.Comment) {
-					var node = (Comment)pos;
-					base.StartNode(node);
-					base.WriteComment(node.CommentType, node.Content, node.References);
-					base.EndNode(node);
-				}
-				// see CSharpOutputVisitor.VisitNewLine()
-				//				if (pos.Role == Roles.NewLine) {
-				//					if (visitorWroteNewLine <= 0)
-				//						base.NewLine();
-				//					visitorWroteNewLine--;
-				//				}
-				if (pos.Role == Roles.PreProcessorDirective) {
-					var node = (PreProcessorDirective)pos;
-					base.StartNode(node);
-					base.WritePreProcessorDirective(node.Type, node.Argument);
-					base.EndNode(node);
-				}
-			}
-		}
+    public override void WriteIdentifier(Identifier identifier, object data)
+    {
+        WriteSpecialsUpToRole(identifier.Role ?? Roles.Identifier);
+        base.WriteIdentifier(identifier, data);
+    }
 
-		/// <summary>
-		/// Writes all specials between the current position (in the positionStack) and the next
-		/// node with the specified role. Advances the current position.
-		/// </summary>
-		void WriteSpecialsUpToRole(Role role)
-		{
-			WriteSpecialsUpToRole(role, null);
-		}
+    public override void WriteToken(Role role, string token, object data)
+    {
+        WriteSpecialsUpToRole(role);
+        base.WriteToken(role, token, data);
+    }
 
-		void WriteSpecialsUpToRole(Role role, AstNode nextNode)
-		{
-			if (positionStack.Count == 0) {
-				return;
-			}
-			// Look for the role between the current position and the nextNode.
-			for (AstNode pos = positionStack.Peek(); pos != null && pos != nextNode; pos = pos.NextSibling) {
-				if (pos.Role == role) {
-					WriteSpecials(positionStack.Pop(), pos);
-					// Push the next sibling because the node matching the role is not a special,
-					// and should be considered to be already handled.
-					positionStack.Push(pos.NextSibling);
-					// This is necessary for OptionalComma() to work correctly.
-					break;
-				}
-			}
-		}
+    public override void NewLine()
+    {
+        if (_visitorWroteNewLine >= 0)
+            base.NewLine();
 
-		/// <summary>
-		/// Writes all specials between the current position (in the positionStack) and the specified node.
-		/// Advances the current position.
-		/// </summary>
-		public override void WriteSpecialsUpToNode(AstNode node)
-		{
-			if (positionStack.Count == 0) {
-				return;
-			}
-			for (AstNode pos = positionStack.Peek(); pos != null; pos = pos.NextSibling) {
-				if (pos == node) {
-					WriteSpecials(positionStack.Pop(), pos);
-					// Push the next sibling because the node itself is not a special,
-					// and should be considered to be already handled.
-					positionStack.Push(pos.NextSibling);
-					// This is necessary for OptionalComma() to work correctly.
-					break;
-				}
-			}
-		}
-		#endregion
-	}
+        _visitorWroteNewLine++;
+    }
+
+    #region WriteSpecials
+
+    /// <summary>
+    /// Writes all specials from start to end (exclusive). Does not touch the positionStack.
+    /// </summary>
+    private void WriteSpecials(AstNode start, AstNode end)
+    {
+        for (var pos = start; pos != end; pos = pos.NextSibling)
+        {
+            if (pos.Role == Roles.Comment)
+            {
+                var node = (Comment)pos;
+                base.StartNode(node);
+                base.WriteComment(node.CommentType, node.Content, node.References);
+                base.EndNode(node);
+            }
+
+            // see CSharpOutputVisitor.VisitNewLine()
+            //				if (pos.Role == Roles.NewLine) {
+            //					if (visitorWroteNewLine <= 0)
+            //						base.NewLine();
+            //					visitorWroteNewLine--;
+            //				}
+            if (pos.Role == Roles.PreProcessorDirective)
+            {
+                var node = (PreProcessorDirective)pos;
+                base.StartNode(node);
+                base.WritePreProcessorDirective(node.Type, node.Argument);
+                base.EndNode(node);
+            }
+        }
+    }
+
+    private void WriteSpecialsUpToRole(Role role, AstNode nextNode = null)
+    {
+        if (_positionStack.Count == 0)
+            return;
+
+        // Look for the role between the current position and the nextNode.
+        for (var pos = _positionStack.Peek(); pos != null && pos != nextNode; pos = pos.NextSibling)
+            if (pos.Role == role)
+            {
+                WriteSpecials(_positionStack.Pop(), pos);
+                // Push the next sibling because the node matching the role is not a special,
+                // and should be considered to be already handled.
+                _positionStack.Push(pos.NextSibling);
+                // This is necessary for OptionalComma() to work correctly.
+                break;
+            }
+    }
+
+    /// <summary>
+    /// Writes all specials between the current position (in the positionStack) and the specified node.
+    /// Advances the current position.
+    /// </summary>
+    public override void WriteSpecialsUpToNode(AstNode node)
+    {
+        if (_positionStack.Count == 0)
+            return;
+
+        for (var pos = _positionStack.Peek(); pos != null; pos = pos.NextSibling)
+            if (pos == node)
+            {
+                WriteSpecials(_positionStack.Pop(), pos);
+                // Push the next sibling because the node itself is not a special,
+                // and should be considered to be already handled.
+                _positionStack.Push(pos.NextSibling);
+                // This is necessary for OptionalComma() to work correctly.
+                break;
+            }
+    }
+
+    #endregion
 }

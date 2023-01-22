@@ -21,56 +21,31 @@ using ICSharpCode.NRefactory.CSharp.Resolver;
 using ICSharpCode.NRefactory.Semantics;
 using ICSharpCode.NRefactory.TypeSystem;
 
-namespace ICSharpCode.NRefactory.CSharp.TypeSystem
+namespace ICSharpCode.NRefactory.CSharp.TypeSystem;
+
+/// <summary>
+/// Looks up an alias (identifier in front of :: operator).
+/// </summary>
+/// <remarks>
+/// The member lookup performed by the :: operator is handled
+/// by <see cref="MemberTypeOrNamespaceReference"/>.
+/// </remarks>
+[Serializable]
+public sealed class AliasNamespaceReference : TypeOrNamespaceReference, ISupportsInterning
 {
-	/// <summary>
-	/// Looks up an alias (identifier in front of :: operator).
-	/// </summary>
-	/// <remarks>
-	/// The member lookup performed by the :: operator is handled
-	/// by <see cref="MemberTypeOrNamespaceReference"/>.
-	/// </remarks>
-	[Serializable]
-	public sealed class AliasNamespaceReference : TypeOrNamespaceReference, ISupportsInterning
-	{
-		readonly string identifier;
-		
-		public AliasNamespaceReference(string identifier)
-		{
-			if (identifier == null)
-				throw new ArgumentNullException("identifier");
-			this.identifier = identifier;
-		}
-		
-		public string Identifier {
-			get { return identifier; }
-		}
-		
-		public override ResolveResult Resolve(CSharpResolver resolver)
-		{
-			return resolver.ResolveAlias(identifier);
-		}
-		
-		public override IType ResolveType(CSharpResolver resolver)
-		{
-			// alias cannot refer to types
-			return SpecialType.UnknownType;
-		}
-		
-		public override string ToString()
-		{
-			return identifier + "::";
-		}
-		
-		int ISupportsInterning.GetHashCodeForInterning()
-		{
-			return identifier.GetHashCode();
-		}
-		
-		bool ISupportsInterning.EqualsForInterning(ISupportsInterning other)
-		{
-			AliasNamespaceReference anr = other as AliasNamespaceReference;
-			return anr != null && this.identifier == anr.identifier;
-		}
-	}
+    public AliasNamespaceReference(string identifier) => Identifier = identifier ?? throw new ArgumentNullException(nameof(identifier));
+
+    public string Identifier { get; }
+
+    public override ResolveResult Resolve(CSharpResolver resolver) => resolver.ResolveAlias(Identifier);
+
+    // alias cannot refer to types
+    public override IType ResolveType(CSharpResolver resolver) => SpecialType.UnknownType;
+
+    public override string ToString() => Identifier + "::";
+
+    int ISupportsInterning.GetHashCodeForInterning() => Identifier.GetHashCode();
+
+    bool ISupportsInterning.EqualsForInterning(ISupportsInterning other) =>
+        other is AliasNamespaceReference aliasNamespaceReference && Identifier == aliasNamespaceReference.Identifier;
 }

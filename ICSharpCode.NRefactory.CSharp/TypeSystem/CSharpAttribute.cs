@@ -24,142 +24,112 @@ using ICSharpCode.NRefactory.Semantics;
 using ICSharpCode.NRefactory.TypeSystem;
 using ICSharpCode.NRefactory.Utils;
 
-namespace ICSharpCode.NRefactory.CSharp.TypeSystem {
-	[Serializable]
-	public sealed class CSharpAttribute : IUnresolvedAttribute
-	{
-		ITypeReference attributeType;
-		DomRegion region;
-		IList<IConstantValue> positionalArguments;
-		IList<KeyValuePair<string, IConstantValue>> namedCtorArguments;
-		IList<KeyValuePair<string, IConstantValue>> namedArguments;
-		
-		public CSharpAttribute(ITypeReference attributeType, DomRegion region,
-		                       IList<IConstantValue> positionalArguments,
-		                       IList<KeyValuePair<string, IConstantValue>> namedCtorArguments,
-		                       IList<KeyValuePair<string, IConstantValue>> namedArguments)
-		{
-			if (attributeType == null)
-				throw new ArgumentNullException("attributeType");
-			this.attributeType = attributeType;
-			this.region = region;
-			this.positionalArguments = positionalArguments ?? EmptyList<IConstantValue>.Instance;
-			this.namedCtorArguments = namedCtorArguments ?? EmptyList<KeyValuePair<string, IConstantValue>>.Instance;
-			this.namedArguments = namedArguments ?? EmptyList<KeyValuePair<string, IConstantValue>>.Instance;
-		}
-		
-		public DomRegion Region {
-			get { return region; }
-		}
-		
-		public ITypeReference AttributeType {
-			get { return attributeType; }
-		}
-		
-		public IAttribute CreateResolvedAttribute(ITypeResolveContext context)
-		{
-			return new CSharpResolvedAttribute((CSharpTypeResolveContext)context, this);
-		}
-		
-		sealed class CSharpResolvedAttribute : IAttribute
-		{
-			readonly CSharpTypeResolveContext context;
-			readonly CSharpAttribute unresolved;
-			readonly IType attributeType;
-			
-			IList<KeyValuePair<IMember, ResolveResult>> namedArguments;
-			
-			public CSharpResolvedAttribute(CSharpTypeResolveContext context, CSharpAttribute unresolved)
-			{
-				this.context = context;
-				this.unresolved = unresolved;
-				// Pretty much any access to the attribute checks the type first, so
-				// we don't need to use lazy-loading for that.
-				this.attributeType = unresolved.AttributeType.Resolve(context);
-			}
-			
-			DomRegion IAttribute.Region {
-				get { return unresolved.Region; }
-			}
-			
-			IType IAttribute.AttributeType {
-				get { return attributeType; }
-			}
-			
-			ResolveResult ctorInvocation;
-			
-			InvocationResolveResult GetCtorInvocation()
-			{
-				ResolveResult rr = LazyInit.VolatileRead(ref this.ctorInvocation);
-				if (rr != null) {
-					return rr as InvocationResolveResult;
-				} else {
-					CSharpResolver resolver = new CSharpResolver(context);
-					int totalArgumentCount = unresolved.positionalArguments.Count + unresolved.namedCtorArguments.Count;
-					ResolveResult[] arguments = new ResolveResult[totalArgumentCount];
-					string[] argumentNames = new string[totalArgumentCount];
-					int i = 0;
-					while (i < unresolved.positionalArguments.Count) {
-						IConstantValue cv = unresolved.positionalArguments[i];
-						arguments[i] = cv.Resolve(context);
-						i++;
-					}
-					foreach (var pair in unresolved.namedCtorArguments) {
-						argumentNames[i] = pair.Key;
-						arguments[i] = pair.Value.Resolve(context);
-						i++;
-					}
-					rr = resolver.ResolveObjectCreation(attributeType, arguments, argumentNames);
-					return LazyInit.GetOrSet(ref this.ctorInvocation, rr) as InvocationResolveResult;
-				}
-			}
-			
-			IMethod IAttribute.Constructor {
-				get {
-					var invocation = GetCtorInvocation();
-					if (invocation != null)
-						return invocation.Member as IMethod;
-					else
-						return null;
-				}
-			}
-			
-			IList<ResolveResult> positionalArguments;
-			
-			IList<ResolveResult> IAttribute.PositionalArguments {
-				get {
-					var result = LazyInit.VolatileRead(ref this.positionalArguments);
-					if (result != null) {
-						return result;
-					} else {
-						var invocation = GetCtorInvocation();
-						if (invocation != null)
-							result = invocation.GetArgumentsForCall();
-						else
-							result = EmptyList<ResolveResult>.Instance;
-						return LazyInit.GetOrSet(ref this.positionalArguments, result);
-					}
-				}
-			}
-			
-			IList<KeyValuePair<IMember, ResolveResult>> IAttribute.NamedArguments {
-				get {
-					var namedArgs = LazyInit.VolatileRead(ref this.namedArguments);
-					if (namedArgs != null) {
-						return namedArgs;
-					} else {
-						namedArgs = new List<KeyValuePair<IMember, ResolveResult>>();
-						foreach (var pair in unresolved.namedArguments) {
-							IMember member = attributeType.GetMembers(m => (m.SymbolKind == SymbolKind.Field || m.SymbolKind == SymbolKind.Property) && m.Name == pair.Key).FirstOrDefault();
-							if (member != null) {
-								ResolveResult val = pair.Value.Resolve(context);
-								namedArgs.Add(new KeyValuePair<IMember, ResolveResult>(member, val));
-							}
-						}
-						return LazyInit.GetOrSet(ref this.namedArguments, namedArgs);
-					}
-				}
-			}
-		}
-	}
+namespace ICSharpCode.NRefactory.CSharp.TypeSystem;
+
+[Serializable]
+public sealed class CSharpAttribute : IUnresolvedAttribute
+{
+    private IList<IConstantValue> _positionalArguments;
+    private IList<KeyValuePair<string, IConstantValue>> _namedCtorArguments;
+    private IList<KeyValuePair<string, IConstantValue>> _namedArguments;
+
+    public CSharpAttribute(ITypeReference attributeType, DomRegion region, IList<IConstantValue> positionalArguments,
+        IList<KeyValuePair<string, IConstantValue>> namedCtorArguments, IList<KeyValuePair<string, IConstantValue>> namedArguments)
+    {
+        AttributeType = attributeType ?? throw new ArgumentNullException(nameof(attributeType));
+        Region = region;
+        _positionalArguments = positionalArguments ?? EmptyList<IConstantValue>.Instance;
+        _namedCtorArguments = namedCtorArguments ?? EmptyList<KeyValuePair<string, IConstantValue>>.Instance;
+        _namedArguments = namedArguments ?? EmptyList<KeyValuePair<string, IConstantValue>>.Instance;
+    }
+
+    public DomRegion Region { get; }
+
+    public ITypeReference AttributeType { get; }
+
+    public IAttribute CreateResolvedAttribute(ITypeResolveContext context) =>
+        new CSharpResolvedAttribute((CSharpTypeResolveContext)context, this);
+
+    private sealed class CSharpResolvedAttribute : IAttribute
+    {
+        private readonly CSharpTypeResolveContext _context;
+        private readonly CSharpAttribute _unresolved;
+        private readonly IType _attributeType;
+
+        private ResolveResult _ctorInvocation;
+        private IList<ResolveResult> _localPositionalArguments;
+        private IList<KeyValuePair<IMember, ResolveResult>> _localNamedArguments;
+
+        public CSharpResolvedAttribute(CSharpTypeResolveContext context, CSharpAttribute unresolved)
+        {
+            _context = context;
+            _unresolved = unresolved;
+            // Pretty much any access to the attribute checks the type first, so
+            // we don't need to use lazy-loading for that.
+            _attributeType = unresolved.AttributeType.Resolve(context);
+        }
+
+        DomRegion IAttribute.Region => _unresolved.Region;
+
+        IType IAttribute.AttributeType => _attributeType;
+
+        IMethod IAttribute.Constructor => GetCtorInvocation()?.Member as IMethod;
+
+        IList<ResolveResult> IAttribute.PositionalArguments =>
+            LazyInit.VolatileRead(ref _localPositionalArguments) ?? GetResolveResults();
+
+        IList<KeyValuePair<IMember, ResolveResult>> IAttribute.NamedArguments =>
+            LazyInit.VolatileRead(ref _localNamedArguments) ?? GetListFromNamedArgs();
+
+        private InvocationResolveResult GetCtorInvocation() =>
+            LazyInit.VolatileRead(ref _ctorInvocation) is { } resolveResult
+                ? resolveResult as InvocationResolveResult
+                : GetInvocationResolveResult();
+
+        private InvocationResolveResult GetInvocationResolveResult()
+        {
+            var resolver = new CSharpResolver(_context);
+            var totalArgumentCount = _unresolved._positionalArguments.Count + _unresolved._namedCtorArguments.Count;
+            var arguments = new ResolveResult[totalArgumentCount];
+            var argumentNames = new string[totalArgumentCount];
+            var index = 0;
+
+            for (; index < _unresolved._positionalArguments.Count; index++)
+                arguments[index] = _unresolved._positionalArguments[index].Resolve(_context);
+
+            foreach (var (key, value) in _unresolved._namedCtorArguments)
+            {
+                argumentNames[index] = key;
+                arguments[index] = value.Resolve(_context);
+                index++;
+            }
+
+            var resolveResult = resolver.ResolveObjectCreation(_attributeType, arguments, argumentNames);
+            return LazyInit.GetOrSet(ref _ctorInvocation, resolveResult) as InvocationResolveResult;
+        }
+
+        private IList<ResolveResult> GetResolveResults()
+        {
+            var invocation = GetCtorInvocation();
+            var results = invocation != null
+                ? invocation.GetArgumentsForCall()
+                : EmptyList<ResolveResult>.Instance;
+            return LazyInit.GetOrSet(ref _localPositionalArguments, results);
+        }
+
+        private IList<KeyValuePair<IMember, ResolveResult>> GetListFromNamedArgs()
+        {
+            var keyValuePairs = _unresolved._namedArguments
+                .Select(p => KeyValuePair.Create(GetMemberOrDefault(p.Key), p.Value.Resolve(_context)))
+                .Where(p => p.Key is { })
+                .ToArray();
+
+            return LazyInit.GetOrSet(ref _localNamedArguments, keyValuePairs);
+        }
+
+        private IMember GetMemberOrDefault(string key) =>
+            _attributeType
+                .GetMembers(m => m.SymbolKind is SymbolKind.Field or SymbolKind.Property && m.Name == key)
+                .FirstOrDefault();
+    }
 }
